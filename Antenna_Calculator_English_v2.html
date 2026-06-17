@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="et">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Antenna Calculator</title>
+<style>
+  :root{--bg:#0b1020;--card:#111827;--muted:#94a3b8;--text:#e5e7eb;--line:#334155;--blue:#3b82f6;--green:#22c55e;--pink:#ec4899;--red:#ef4444;--yellow:#facc15}
+  *{box-sizing:border-box} body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
+  header{padding:22px 26px;border-bottom:1px solid var(--line);background:#050816} h1{margin:0;font-size:25px}.sub{color:var(--muted);margin-top:6px}
+  main{display:grid;grid-template-columns:440px 1fr;gap:18px;padding:18px}.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(0,0,0,.25);margin-bottom:16px}
+  h2{font-size:18px;margin:0 0 12px} label{display:block;margin-top:10px;font-size:13px;color:#cbd5e1;font-weight:700}
+  input,select,textarea{width:100%;padding:9px;border-radius:9px;border:1px solid #475569;background:#0f172a;color:var(--text);font-size:14px}
+  textarea{min-height:100px;font-family:Consolas,monospace} button{margin-top:12px;padding:10px 12px;border:0;border-radius:9px;background:var(--blue);color:white;font-weight:700;cursor:pointer}
+  button.secondary{background:#64748b} button.green{background:#15803d} button.danger{background:#b91c1c}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.resultTable,.db{width:100%;border-collapse:collapse;margin-top:10px}
+  .resultTable th,.resultTable td,.db th,.db td{border-bottom:1px solid var(--line);padding:10px;text-align:left}.db{font-size:13px}
+  .big{font-size:23px;font-weight:800}.red{color:var(--red)}.pink{color:var(--pink)}.blue{color:#60a5fa}.yellow{color:var(--yellow)}
+  .muted{color:var(--muted);font-size:13px}.warn{color:#fde68a;font-size:13px;margin-top:8px}.ok{color:#86efac;font-size:13px;margin-top:8px}
+  .pill{display:inline-block;padding:3px 7px;border-radius:999px;background:#1e293b;color:#cbd5e1;font-size:12px}.smallbtn{padding:6px 8px;margin:0;background:#475569;font-size:12px}
+  @media(max-width:900px){main{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><h1>Antenna Calculator</h1><div class="sub">Antenna touchdown and beam coverage calculator with MSI antenna database support<br>by L.Avi</div></header>
+<main>
+<section>
+<div class="card"><h2>1. Select antenna and enter tilt</h2>
+<label>Search Antenna</label><input id="antennaSearch" placeholder="Enter model or vendor..."><label>Antenna Model</label><select id="antennaSelect"></select>
+<div class="grid2">
+<div><label>Height / HAAT (m)</label><input id="height" type="number" step="0.1" value="15"></div>
+<div><label>Mechanical Tilt (°)</label><input id="mtilt" type="number" step="0.1" value="0"></div>
+<div><label>Electrical Tilt / RET (°)</label><input id="etilt" type="number" step="0.1" value="10"></div>
+<div><label>Total Tilt (°)</label><input id="totalTilt" type="number" step="0.1" value="10" readonly></div>
+<div><label>Vertical Beam Width / 3 dB (°)</label><input id="vbw" type="number" step="0.01" value="14.29"></div>
+</div>
+<button onclick="calculate(false)">Calculate using ETilt + MTilt</button>
+<button class="secondary" onclick="calculate(true)">Calculate using Total Tilt</button>
+<p class="warn">If a vertical pattern is found in the MSI file, VBW is calculated automatically.</p>
+</div>
+
+<div class="card"><h2>2. MSI File Import</h2>
+<label>Select one or more .msi / .pln / .txt antenna files</label>
+<input id="msiFiles" type="file" multiple accept=".msi,.pln,.txt,.ant">
+<button class="green" onclick="importMsiFiles()">Import MSI Files</button>
+<p class="muted">If the MSI contains a vertical pattern, HPBW/VBW is calculated from the 3 dB crossings. 360° is not stored as VBW.</p>
+<p id="importStatus" class="ok"></p></div>
+
+<div class="card"><h2>3. Add / edit antenna manually</h2>
+<div class="grid2">
+<div><label>Vendor</label><input id="newVendor" placeholder="nt CommScope"></div><div><label>Model</label><input id="newModel" placeholder="nt RR-65C-R2VB-V2"></div>
+<div><label>Frequency Band</label><input id="newBand" placeholder="nt 694–960 MHz"></div><div><label>Horizontal BW °</label><input id="newHbw" type="number" step="0.1"></div><div><label>Vertical BW °</label><input id="newVbw" type="number" step="0.01"></div>
+<div><label>RET min °</label><input id="newRetMin" type="number" step="0.1" value="0"></div><div><label>RET max °</label><input id="newRetMax" type="number" step="0.1" value="10"></div>
+</div><button onclick="addAntenna()">Add</button><button class="secondary" onclick="exportDb()">Export JSON</button><button class="danger" onclick="resetDb()">Restore Defaults</button></div>
+
+<div class="card"><h2>4. JSON Import</h2><textarea id="jsonImport"></textarea><button onclick="importDb()">Import / add to database</button></div>
+</section>
+
+<section>
+<div class="card"><h2>Result</h2>
+<table class="resultTable">
+<tr><th>Point</th><th>Angle</th><th>Distance</th></tr>
+<tr><td class="red">Upper Beam Edge</td><td id="upperAngle">-</td><td class="big red" id="upperDist">-</td></tr>
+<tr><td class="pink">Main Beam</td><td id="mainAngle">-</td><td class="big pink" id="mainDist">-</td></tr>
+<tr><td class="blue">Lower Beam Edge</td><td id="lowerAngle">-</td><td class="big blue" id="lowerDist">-</td></tr>
+</table>
+
+
+</div>
+
+<div class="card"><h2>Antenna Database <span class="pill" id="dbCount"></span></h2><table class="db" id="dbTable"></table></div>
+</section></main>
+
+<script>
+const defaults=[{vendor:"Sample",model:"Kathrein tool example",band:"test",gain:16.5,hbw:65,vbw:14.29,retMin:0,retMax:10,source:"manual"},
+{vendor:"CommScope",model:"RR-65C-R2VB-V2",band:"694–790 MHz",gain:16.1,hbw:65,vbw:8.7,retMin:0,retMax:10,source:"manual"},
+{vendor:"CommScope",model:"RR-65C-R2VB-V2",band:"790–890 MHz",gain:16.5,hbw:65,vbw:7.9,retMin:0,retMax:10,source:"manual"},
+{vendor:"CommScope",model:"RR-65C-R2VB-V2",band:"890–960 MHz",gain:16.8,hbw:65,vbw:7.4,retMin:0,retMax:10,source:"manual"}];
+function loadDb(){try{return JSON.parse(localStorage.getItem("antennaDb_msi_v4_clean"))||defaults}catch(e){return defaults}}
+function saveDb(db){localStorage.setItem("antennaDb_msi_v4_clean",JSON.stringify(db))}
+function cleanNumber(s){if(s===null||s===undefined)return NaN;const m=String(s).replace(",",".").match(/[-+]?\d+(\.\d+)?/);return m?parseFloat(m[0]):NaN}
+function num(id){return parseFloat(document.getElementById(id).value)||0}
+function degToRad(x){return x*Math.PI/180}
+function distance(h,a){if(a<0)return {txt:"Over Horizon", val:Infinity, status:"over"}; if(a===0)return {txt:"Horizon", val:Infinity, status:"horizon"}; const d=h/Math.tan(degToRad(a)); return {txt:fmt(d), val:d, status:"touch"}}
+function fmt(x){if(!isFinite(x))return"Over Horizon"; if(x>=1000)return (x/1000).toFixed(2).replace(".",",")+" km"; return x.toFixed(1).replace(".",",")+" m"}
+
+function refreshDb(){
+ const db=loadDb(),sel=document.getElementById("antennaSelect"); sel.innerHTML=""; const search=(document.getElementById("antennaSearch")?.value||"").toLowerCase();
+ db.forEach((a,i)=>{ const txt=((a.vendor||"")+" "+(a.model||"")).toLowerCase(); if(search && !txt.includes(search)) return; const o=document.createElement("option");o.value=i;o.textContent=`${a.vendor||"-"} ${a.model||"-"} | ${a.band||"-"} | VBW ${a.vbw??"-"}°`;sel.appendChild(o)});
+ sel.onchange=()=>{const a=loadDb()[Number(sel.value)];document.getElementById("vbw").value=a.vbw??"";calculate(false)};
+ const table=document.getElementById("dbTable");
+ table.innerHTML="<tr><th>Vendor</th><th>Model</th><th>Frequency</th><th>HBW</th><th>VBW</th><th>Source</th><th></th></tr>";
+ db.forEach((a,i)=>{table.innerHTML+=`<tr><td>${a.vendor??""}</td><td>${a.model??""}</td><td>${a.band??""}</td><td>${a.hbw??""}°</td><td>${a.vbw??""}°</td><td>${a.source??""}</td><td><button class="smallbtn" onclick="deleteAntenna(${i})">Delete</button></td></tr>`});
+ document.getElementById("dbCount").textContent=db.length+" records"; if(db.length)sel.onchange()
+}
+function setDist(id, res){
+ const el=document.getElementById(id); el.textContent=res.txt;
+ if(res.status==="over"){el.classList.add("yellow");}
+}
+function calculate(useTotal){
+ const h=num("height"), vbw=num("vbw"), half=vbw/2, total=useTotal?num("totalTilt"):num("etilt")+num("mtilt"); document.getElementById("totalTilt").value=total.toFixed(2);
+ const upperA=total-half, mainA=total, lowerA=total+half;
+ const upperD=distance(h,upperA), mainD=distance(h,mainA), lowerD=distance(h,lowerA);
+ document.getElementById("upperAngle").textContent=upperA.toFixed(3)+"°"; document.getElementById("mainAngle").textContent=mainA.toFixed(3)+"°"; document.getElementById("lowerAngle").textContent=lowerA.toFixed(3)+"°";
+ document.getElementById("upperDist").textContent=upperD.txt; document.getElementById("mainDist").textContent=mainD.txt; document.getElementById("lowerDist").textContent=lowerD.txt;
+ document.getElementById("summaryHeight").textContent=h.toFixed(1).replace(".",",")+" m";
+ document.getElementById("summaryTilt").textContent=total.toFixed(3)+"°";
+ document.getElementById("summaryVbw").textContent=vbw.toFixed(3)+"°";
+ document.getElementById("coverageWidth").textContent=(upperD.status==="touch"&&lowerD.status==="touch")?fmt(upperD.val-lowerD.val):"Over Horizon";
+}
+function addAntenna(){const a={vendor:document.getElementById("newVendor").value.trim()||"-",model:document.getElementById("newModel").value.trim(),band:document.getElementById("newBand").value.trim()||"-",hbw:cleanNumber(document.getElementById("newHbw").value),vbw:cleanNumber(document.getElementById("newVbw").value),retMin:cleanNumber(document.getElementById("newRetMin").value),retMax:cleanNumber(document.getElementById("newRetMax").value),source:"manual"}; if(!a.model||isNaN(a.vbw)){alert("Fill at least Model and Vertical BW.");return} const db=loadDb();db.push(a);saveDb(db);refreshDb()}
+function deleteAntenna(i){const db=loadDb();db.splice(i,1);saveDb(db);refreshDb()}
+function exportDb(){document.getElementById("jsonImport").value=JSON.stringify(loadDb(),null,2)}
+function importDb(){try{const incoming=JSON.parse(document.getElementById("jsonImport").value); if(!Array.isArray(incoming))throw new Error("JSON must be an array."); saveDb(loadDb().concat(incoming));refreshDb()}catch(e){alert("JSON Import ebaõnnestus: "+e.message)}}
+function resetDb(){if(confirm("Kas taastan näidisandmed?")){saveDb(defaults);refreshDb()}}
+
+function findField(lines, regexes){for(const raw of lines){const l=raw.trim();for(const re of regexes){const m=l.match(re); if(m) return m[1] ?? m[2] ?? ""}}return""}
+function parsePatternSection(lines, sectionName){
+ let start=-1, expected=null; const re=new RegExp("^\\s*"+sectionName+"\\b(?:\\s+([0-9]+))?","i");
+ for(let i=0;i<lines.length;i++){const m=lines[i].trim().match(re); if(m){start=i+1; expected=m[1]?parseInt(m[1]):null; break;}}
+ if(start<0)return[]; const pts=[];
+ for(let i=start;i<lines.length;i++){const l=lines[i].trim(); if(!l)continue; if(/^[A-Z_]+\b/i.test(l)&&!/^[-+]?\d/.test(l))break;
+ const nums=l.replace(",",".").match(/[-+]?\d+(?:\.\d+)?/g); if(nums&&nums.length>=2){const a=parseFloat(nums[0]),v=parseFloat(nums[1]); if(isFinite(a)&&isFinite(v))pts.push({a,v}); if(expected&&pts.length>=expected)break;}}
+ return pts;
+}
+function normDiff(a,b){let d=a-b;while(d<=-180)d+=360;while(d>180)d-=360;return d}
+function circularBeamwidth(points){
+ if(!points||points.length<10)return NaN; let pts=points.map(p=>({a:((p.a%360)+360)%360,v:p.v})).sort((x,y)=>x.a-y.a);
+ const vals=pts.map(p=>p.v),minV=Math.min(...vals),maxV=Math.max(...vals); const attenuationMode=minV<=3&&maxV>3;
+ const loss=pts.map(p=>({a:p.a,loss:attenuationMode?p.v-minV:maxV-p.v})); let peak=0; for(let i=1;i<loss.length;i++)if(loss[i].loss<loss[peak].loss)peak=i;
+ const peakA=loss[peak].a; let unwrapped=loss.map(p=>({x:normDiff(p.a,peakA),loss:p.loss})).sort((a,b)=>a.x-b.x);
+ let left=unwrapped.filter(p=>p.x<=0).sort((a,b)=>b.x-a.x), right=unwrapped.filter(p=>p.x>=0).sort((a,b)=>a.x-b.x);
+ function cross(arr){for(let i=0;i<arr.length-1;i++){const p1=arr[i],p2=arr[i+1]; if((p1.loss<=3&&p2.loss>=3)||(p1.loss>=3&&p2.loss<=3)){if(p2.loss===p1.loss)return Math.abs(p2.x); const t=(3-p1.loss)/(p2.loss-p1.loss); return Math.abs(p1.x+t*(p2.x-p1.x));}}return NaN}
+ const l=cross(left),r=cross(right); if(isFinite(l)&&isFinite(r)){const bw=l+r; if(bw>0&&bw<180)return bw} return NaN;
+}
+function parseMsi(text, filename){
+ const lines=text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean), joined=lines.join("\n");
+ let name=findField(lines,[/^(?:NAME|MODEL|ANTENNA_MODEL|TYPE)\s*[:=]?\s+(.+)$/i]); if(!name)name=filename.replace(/\.[^.]+$/,"");
+ let vendor=findField(lines,[/^(?:MAKE|MANUFACTURER|VENDOR)\s*[:=]?\s+(.+)$/i]); if(!vendor)vendor=(name.split(/[\s_-]+/)[0]||"-");
+ let freq=findField(lines,[/^(?:FREQUENCY|FREQ|BAND)\s*[:=]?\s+(.+)$/i]);
+ let gain=cleanNumber(findField(lines,[/^(?:GAIN|GAIN_DBI|MAXGAIN|MAX_GAIN)\s*[:=]?\s+([-+]?\d+(?:[.,]\d+)?)/i]));
+ let hbw=cleanNumber(findField(lines,[/^(?:H_WIDTH|HBW|HORIZONTAL_WIDTH|HORIZONTAL\s+BEAMWIDTH|AZIMUTH_BEAMWIDTH|HOR_WIDTH)\s*[:=]?\s+([-+]?\d+(?:[.,]\d+)?)/i]));
+ let vbw=cleanNumber(findField(lines,[/^(?:V_WIDTH|VBW|VERTICAL_WIDTH|VERTICAL\s+BEAMWIDTH|ELEVATION_BEAMWIDTH|VER_WIDTH)\s*[:=]?\s+([-+]?\d+(?:[.,]\d+)?)/i]));
+ if(isNaN(gain)){const m=joined.match(/\bGAIN\b[^\d\-+]{0,20}([-+]?\d+(?:[.,]\d+)?)/i); if(m)gain=cleanNumber(m[1])}
+ if(isNaN(hbw)||hbw>=180){const hp=circularBeamwidth(parsePatternSection(lines,"HORIZONTAL")); if(isFinite(hp))hbw=Math.round(hp*100)/100}
+ if(isNaN(vbw)||vbw>=180){const vp=circularBeamwidth(parsePatternSection(lines,"VERTICAL")); if(isFinite(vp))vbw=Math.round(vp*100)/100}
+ return {vendor,model:name,band:freq||"-",gain:isNaN(gain)?"":gain,hbw:isNaN(hbw)?"":Math.round(hbw*100)/100,vbw:isNaN(vbw)?"":Math.round(vbw*100)/100,retMin:0,retMax:10,source:"MSI auto: "+filename};
+}
+async function importMsiFiles(){
+ const files=Array.from(document.getElementById("msiFiles").files||[]); if(!files.length){alert("Select MSI files.");return}
+ const imported=[],needsVbw=[]; for(const file of files){const text=await file.text(); const a=parseMsi(text,file.name); imported.push(a); if(a.vbw==="")needsVbw.push(file.name)}
+ saveDb(loadDb().concat(imported)); refreshDb(); let msg=`Imported: ${imported.length} antennas.`; if(needsVbw.length)msg+=` NB! ${needsVbw.length} file(s) could not be used to calculate VBW; add it manually: ${needsVbw.join(", ")}`; document.getElementById("importStatus").textContent=msg;
+}
+
+refreshDb();
+setTimeout(()=>{
+ const s=document.getElementById("antennaSearch");
+ if(s) s.addEventListener("input", refreshDb);
+},100);
+</script>
+</body></html>
